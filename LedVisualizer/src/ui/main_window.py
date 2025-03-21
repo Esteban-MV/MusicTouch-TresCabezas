@@ -1,7 +1,6 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QLabel, QHBoxLayout
-from PyQt6.QtGui import QPalette, QColor
-from PyQt6.QtCore import Qt
-from src.leds.led_widget import LEDWidget
+from PyQt6.QtWidgets import QMainWindow, QPushButton, QStackedWidget
+from src.ui.grid_view.py import GridView
+from src.ui.led_widget import LEDWidget
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -10,40 +9,25 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("LED Visualizer")
         self.setGeometry(100, 100, 800, 600)
 
-        # Aplicar tema oscuro
-        self.set_dark_theme()
+        # Contenedor principal con vistas intercambiables
+        self.view_container = QStackedWidget()
+        self.list_view = QWidget()  # La vista en fila original
+        self.grid_view = GridView()  # Nueva vista en cuadrícula
 
-        # Contenedor principal
-        container = QWidget()
-        layout = QVBoxLayout()
+        self.view_container.addWidget(self.list_view)
+        self.view_container.addWidget(self.grid_view)
 
-        # Etiqueta de información
-        label = QLabel("Visualización de LEDs por pista", self)
-        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(label)
+        # Botón para cambiar vista
+        self.toggle_view_btn = QPushButton("Cambiar Vista")
+        self.toggle_view_btn.clicked.connect(self.toggle_view)
 
-        # Zona de LEDs (simulación de varias pistas)
-        self.leds_container = QVBoxLayout()
-        self.leds = []  # Lista de LEDs por pista
+        # Agregar a la interfaz
+        self.layout.addWidget(self.toggle_view_btn)
+        self.layout.addWidget(self.view_container)
 
-        # Crear LEDs para 3 pistas de prueba
-        for _ in range(3):  
-            row_layout = QHBoxLayout()
-            track_leds = []
-            for _ in range(5):  # 5 LEDs por pista
-                led = LEDWidget()
-                row_layout.addWidget(led)
-                track_leds.append(led)
-            self.leds.append(track_leds)
-            self.leds_container.addLayout(row_layout)
+        self.setCentralWidget(self.view_container)
 
-        layout.addLayout(self.leds_container)
-        container.setLayout(layout)
-        self.setCentralWidget(container)
-
-    def set_dark_theme(self):
-        """Aplica un tema oscuro a la interfaz."""
-        palette = self.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor(25, 25, 25))
-        palette.setColor(QPalette.ColorRole.WindowText, QColor(220, 220, 220))
-        self.setPalette(palette)
+    def toggle_view(self):
+        """Alterna entre la vista en fila y la vista en cuadrícula."""
+        current_index = self.view_container.currentIndex()
+        self.view_container.setCurrentIndex(1 if current_index == 0 else 0)
