@@ -1,0 +1,18 @@
+ Configurar REAPER para enviar datos de pistas por OSC
+Configuración en REAPER:
+Abrir REAPER y acceder a:
+Opciones → Preferencias → Control/OSC/Web
+
+Agregar un nuevo dispositivo OSC
+
+Nombre: OSC_Listener
+
+Modo: "Local"
+
+Puerto de envío: 9000 (Este es el puerto donde nuestro programa recibirá datos).
+
+Activar mensajes de pista (Track count, Track name, etc.).
+
+Guardar y cerrar.
+
+Ahora, REAPER enviará mensajes OSC con información de las pistas.
