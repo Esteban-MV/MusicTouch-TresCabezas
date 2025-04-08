@@ -63,7 +63,7 @@ class TrackManager:
 
     def sync_track(self, track_id, track_name, num_leds):
         """
-        Sincroniza o crea/actualiza una pista a partir de la información recibida (por OSC).
+        Sincroniza o crea/actualiza una pista a partir de la información recibida (por OSC o MIDI).
         track_id: ID numérico (de Reaper)
         track_name: Nombre de la pista
         num_leds: Número deseado de LEDs

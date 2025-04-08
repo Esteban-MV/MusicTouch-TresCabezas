@@ -3,8 +3,8 @@
 import sys
 import time
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QFrame, QScrollArea, QInputDialog, QMessageBox
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QFrame, QScrollArea, QInputDialog, QMessageBox, QComboBox
 )
 from PyQt6.QtGui import QPainter, QBrush, QColor
 from PyQt6.QtCore import Qt, QTimer
@@ -13,7 +13,6 @@ from src.core.track_manager import Track, TrackManager
 from src.core.profile_manager import ProfileManager
 from src.ui.led_config_window import LEDConfigWindow
 
-# Widget para dibujar un LED
 class LEDWidget(QWidget):
     def __init__(self, led, parent=None):
         super().__init__(parent)
@@ -37,7 +36,6 @@ class LEDWidget(QWidget):
         painter.drawEllipse(rect)
         painter.end()
 
-# Contenedor para un LED y su botón de eliminación
 class LEDContainer(QWidget):
     def __init__(self, led, remove_callback=None, parent=None):
         super().__init__(parent)
@@ -62,7 +60,6 @@ class LEDContainer(QWidget):
         if self.remove_callback:
             self.remove_callback(self)
 
-# Fila de pista en la UI (con LEDs y botón para eliminar la pista)
 class TrackRow(QWidget):
     def __init__(self, track, remove_callback=None, parent=None):
         super().__init__(parent)
@@ -75,35 +72,25 @@ class TrackRow(QWidget):
         self.layout = QHBoxLayout()
         self.layout.setContentsMargins(5, 5, 5, 5)
         self.layout.setSpacing(10)
-        
-        # Etiqueta con el nombre de la pista
         self.track_label = QLabel(f"{self.track.name}")
         self.track_label.setStyleSheet("color: white; font-weight: bold;")
         self.layout.addWidget(self.track_label, 1)
-        
-        # Área de LEDs (layout horizontal)
         self.led_area = QHBoxLayout()
         for led in self.track.leds:
             container = LEDContainer(led, remove_callback=self.remove_led)
             self.led_containers.append(container)
             self.led_area.addWidget(container)
-        
-        # Botón para agregar un LED
         self.add_led_btn = QPushButton("+")
         self.add_led_btn.setFixedSize(30, 30)
         self.add_led_btn.setStyleSheet("background-color: #444; color: white; border: none;")
         self.add_led_btn.clicked.connect(self.add_led)
         self.led_area.addWidget(self.add_led_btn)
-        
         self.layout.addLayout(self.led_area, 3)
-        
-        # Botón para eliminar la pista
         self.remove_track_btn = QPushButton("Eliminar Pista")
         self.remove_track_btn.setFixedSize(100, 30)
         self.remove_track_btn.setStyleSheet("background-color: #bb0000; color: white;")
         self.remove_track_btn.clicked.connect(self.handle_remove_track)
         self.layout.addWidget(self.remove_track_btn)
-        
         self.setLayout(self.layout)
 
     def add_led(self):
@@ -131,22 +118,21 @@ class TrackRow(QWidget):
             container.led_widget.update()
 
 class MainWindow(QMainWindow):
-    def __init__(self, track_manager, osc_listener):
+    def __init__(self, track_manager, osc_listener, midi_handler):
         super().__init__()
         self.setWindowTitle("LedVisualizer")
         self.resize(800, 600)
         self.track_manager = track_manager
-        self.osc_listener = osc_listener  # Referencia al objeto OSCListener para conocer su estado
+        self.osc_listener = osc_listener
+        self.midi_handler = midi_handler
         self.profile_manager = ProfileManager()
-        
+        self.active_input = "OSC"  # Valor predeterminado
         self.setStyleSheet("background-color: #1e1e1e;")
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
         self.main_layout.setSpacing(10)
         self.main_layout.setContentsMargins(10, 10, 10, 10)
-        
-        # Barra superior: agregar pista y gestión de perfiles, más botón de información de conexión
         self.top_bar = QHBoxLayout()
         self.add_track_btn = QPushButton("Agregar Pista")
         self.add_track_btn.setStyleSheet("background-color: #444; color: white; padding: 5px 10px;")
@@ -176,13 +162,17 @@ class MainWindow(QMainWindow):
         self.save_profile_btn.clicked.connect(self.save_profile)
         self.delete_profile_btn.clicked.connect(self.delete_profile)
         self.connection_info_btn.clicked.connect(self.show_connection_info)
+        # Se agrega QComboBox para seleccionar el modo de entrada
+        self.input_mode_combo = QComboBox()
+        self.input_mode_combo.addItems(["OSC", "MIDI"])
+        self.input_mode_combo.currentTextChanged.connect(self.switch_input_mode)
+        self.top_bar.addWidget(QLabel("Modo de entrada:"))
+        self.top_bar.addWidget(self.input_mode_combo)
         self.top_bar.addWidget(self.select_profile_btn)
         self.top_bar.addWidget(self.save_profile_btn)
         self.top_bar.addWidget(self.delete_profile_btn)
         self.top_bar.addWidget(self.connection_info_btn)
         self.main_layout.addLayout(self.top_bar)
-        
-        # Indicadores de conexión a Reaper y recepción de datos
         self.status_layout = QHBoxLayout()
         self.reaper_connected_label = QLabel("Conectado a Reaper: No")
         self.reaper_listening_label = QLabel("Escuchando Reaper: No")
@@ -191,8 +181,6 @@ class MainWindow(QMainWindow):
         self.status_layout.addWidget(self.reaper_connected_label)
         self.status_layout.addWidget(self.reaper_listening_label)
         self.main_layout.addLayout(self.status_layout)
-        
-        # Encabezado: "Pistas" y "LEDs"
         self.header_frame = QFrame()
         self.header_frame.setStyleSheet("background-color: #2e2e2e;")
         self.header_layout = QHBoxLayout(self.header_frame)
@@ -205,8 +193,6 @@ class MainWindow(QMainWindow):
         self.header_layout.addWidget(header_pistas, 1)
         self.header_layout.addWidget(header_leds, 3)
         self.main_layout.addWidget(self.header_frame)
-        
-        # Área central con scroll para las pistas
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.track_container = QWidget()
@@ -218,14 +204,11 @@ class MainWindow(QMainWindow):
             self.create_track_row(track)
         self.scroll_area.setWidget(self.track_container)
         self.main_layout.addWidget(self.scroll_area)
-        
-        # Leyenda inferior
         self.legend_frame = QFrame()
         self.legend_frame.setStyleSheet("background-color: #2e2e2e;")
         self.legend_layout = QHBoxLayout(self.legend_frame)
         self.legend_layout.setContentsMargins(10, 5, 10, 5)
         self.legend_layout.setSpacing(20)
-        # Leyenda para LED
         dummy_led = type('Dummy', (), {'intensity': 0.8})()
         led_icon = LEDWidget(dummy_led)
         led_label = QLabel("LED: Visualización de intensidad")
@@ -233,7 +216,6 @@ class MainWindow(QMainWindow):
         led_legend = QHBoxLayout()
         led_legend.addWidget(led_icon)
         led_legend.addWidget(led_label)
-        # Leyenda para Configuración
         config_btn = QPushButton("⚙")
         config_btn.setFixedSize(30, 30)
         config_btn.setStyleSheet("background-color: #444; color: white; border: none;")
@@ -242,7 +224,6 @@ class MainWindow(QMainWindow):
         config_legend = QHBoxLayout()
         config_legend.addWidget(config_btn)
         config_legend.addWidget(config_label)
-        # Leyenda para Agregar LED
         add_led_btn = QPushButton("+")
         add_led_btn.setFixedSize(30, 30)
         add_led_btn.setStyleSheet("background-color: #444; color: white; border: none;")
@@ -255,11 +236,22 @@ class MainWindow(QMainWindow):
         self.legend_layout.addLayout(config_legend)
         self.legend_layout.addLayout(add_legend)
         self.main_layout.addWidget(self.legend_frame)
-        
-        # Temporizador para refrescar la UI (incluyendo los indicadores de estado)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh_ui)
         self.timer.start(100)
+
+    def switch_input_mode(self, mode):
+        self.active_input = mode
+        if mode == "OSC":
+            if self.midi_handler.running:
+                self.midi_handler.stop()
+            if not self.osc_listener.thread.is_alive():
+                self.osc_listener.start()
+        elif mode == "MIDI":
+            if self.osc_listener:
+                self.osc_listener.stop()
+            if not self.midi_handler.running:
+                self.midi_handler.start()
 
     def create_track_row(self, track):
         row = TrackRow(track, remove_callback=self.remove_track_row)
@@ -333,34 +325,44 @@ class MainWindow(QMainWindow):
 
     def show_connection_info(self):
         info_text = (
-            "Para conectar LedVisualizer con Reaper, configure Reaper de la siguiente manera:\n\n"
+            "Para conectar LEDVisualizer con Reaper, configure Reaper de la siguiente manera:\n\n"
             "1. IP y Puerto:\n"
             "   - IP: 127.0.0.1\n"
             "   - Puerto: 9000\n\n"
-            "2. Direcciones OSC a enviar desde Reaper:\n"
-            "   - Para informar sobre una pista:\n"
-            "     /reaper/track/<track_id>/info \"Nombre de Pista\" <num_leds>\n\n"
-            "   - Para enviar el nivel de audio de la pista:\n"
+            "2. Mensajes OSC (ejemplos):\n"
+            "   - Información de pista:\n"
+            "     /reaper/track/<track_id>/info \"Nombre Pista\" <num_leds>\n\n"
+            "   - Nivel de audio:\n"
             "     /reaper/track/<track_id>/level <nivel>\n\n"
-            "   - (Opcional) Para indicar la eliminación de una pista:\n"
+            "   - Eliminación de pista (opcional):\n"
             "     /reaper/track/<track_id>/remove\n\n"
-            "Asegúrese de activar el envío de mensajes OSC en Reaper y que no existan bloqueos de firewall para la conexión."
+            "Para la entrada MIDI, LEDVisualizer leerá mensajes de Control Change donde:\n"
+            "   - El número de control se usará como ID de pista\n"
+            "   - El valor (0-127) se convertirá en un nivel (0.0 a 1.0)\n\n"
+            "Seleccione el modo de entrada (OSC o MIDI) en la interfaz para activar el receptor deseado."
         )
         QMessageBox.information(self, "Información de Conexión a Reaper", info_text)
 
     def refresh_ui(self):
-        # Actualiza la visualización de los LEDs en cada pista
         for row in self.track_rows:
             row.refresh()
-        # Actualiza los indicadores de conexión y recepción de datos OSC desde Reaper
-        if self.osc_listener.connected:
-            self.reaper_connected_label.setText("Conectado a Reaper: Sí")
-        else:
-            self.reaper_connected_label.setText("Conectado a Reaper: No")
-        if self.osc_listener.last_msg_time and (time.time() - self.osc_listener.last_msg_time) < 5:
-            self.reaper_listening_label.setText("Escuchando Reaper: Sí")
-        else:
-            self.reaper_listening_label.setText("Escuchando Reaper: No")
+        if self.active_input == "OSC":
+            if self.osc_listener.connected:
+                self.reaper_connected_label.setText("Conectado a Reaper: Sí")
+            else:
+                self.reaper_connected_label.setText("Conectado a Reaper: No")
+            if self.osc_listener.last_msg_time and (time.time() - self.osc_listener.last_msg_time) < 5:
+                self.reaper_listening_label.setText("Escuchando Reaper: Sí")
+            else:
+                self.reaper_listening_label.setText("Escuchando Reaper: No")
+        elif self.active_input == "MIDI":
+            # Para MIDI, podríamos definir indicadores basados en mensajes recibidos, aquí simplificamos:
+            if self.midi_handler.running:
+                self.reaper_connected_label.setText("Conectado a Reaper (MIDI): Sí")
+                self.reaper_listening_label.setText("Escuchando Reaper (MIDI): Sí")
+            else:
+                self.reaper_connected_label.setText("Conectado a Reaper (MIDI): No")
+                self.reaper_listening_label.setText("Escuchando Reaper (MIDI): No")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -373,6 +375,9 @@ if __name__ == "__main__":
     from src.osc.osc_listener import OSCListener
     osc_listener = OSCListener(tm)
     osc_listener.start()
-    window = MainWindow(tm, osc_listener)
+    from src.midi.midi_handler import MIDIHandler
+    midi_handler = MIDIHandler(tm)
+    # Por defecto iniciamos en OSC; el usuario podrá cambiar a MIDI desde el combo
+    window = MainWindow(tm, osc_listener, midi_handler)
     window.show()
     sys.exit(app.exec())

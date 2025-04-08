@@ -12,13 +12,9 @@ class LEDConfigWindow(QDialog):
 
     def initUI(self):
         layout = QVBoxLayout()
-        
-        # Campo para el threshold
         self.threshold_edit = QLineEdit(str(self.led.threshold))
         layout.addWidget(QLabel("Threshold:"))
         layout.addWidget(self.threshold_edit)
-        
-        # Menú desplegable para seleccionar el parámetro de reacción
         layout.addWidget(QLabel("Parámetro de reacción:"))
         self.response_combo = QComboBox()
         self.response_combo.addItems(["RMS", "Picos"])
@@ -26,24 +22,20 @@ class LEDConfigWindow(QDialog):
         if index >= 0:
             self.response_combo.setCurrentIndex(index)
         layout.addWidget(self.response_combo)
-        
-        # Botones Guardar/Cancelar
         btn_layout = QHBoxLayout()
         save_btn = QPushButton("Guardar")
         cancel_btn = QPushButton("Cancelar")
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
-        
         save_btn.clicked.connect(self.save_config)
         cancel_btn.clicked.connect(self.reject)
-        
         self.setLayout(layout)
 
     def save_config(self):
         try:
             self.led.threshold = float(self.threshold_edit.text())
         except ValueError:
-            pass  # Se puede agregar manejo de error
+            pass
         self.led.response = self.response_combo.currentText()
         self.accept()

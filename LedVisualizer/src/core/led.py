@@ -12,13 +12,11 @@ class LED:
         self.recent_levels.append(level)
         if len(self.recent_levels) > 10:
             self.recent_levels.pop(0)
-
         if self.response.upper() == "RMS":
             avg = sum(self.recent_levels) / len(self.recent_levels)
             self.intensity = avg
         elif self.response.upper() == "PICOS":
             self.intensity = max(self.recent_levels)
-
         if self.intensity > self.threshold:
             self.calibrate()
 
