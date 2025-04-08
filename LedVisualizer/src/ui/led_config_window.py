@@ -1,33 +1,49 @@
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QSlider, QPushButton
+# src/ui/led_config_window.py
 
-class LedConfigWindow(QDialog):
-    def __init__(self, led):
-        super().__init__()
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QHBoxLayout, QComboBox
+from PyQt6.QtCore import Qt
+
+class LEDConfigWindow(QDialog):
+    def __init__(self, led, parent=None):
+        super().__init__(parent)
         self.led = led
+        self.setWindowTitle("Configurar LED")
+        self.initUI()
 
-        self.setWindowTitle(f"Configuración LED {led.led_id}")
-
+    def initUI(self):
         layout = QVBoxLayout()
-
-        self.threshold_label = QLabel(f"Umbral: {self.led.threshold}")
-        self.threshold_slider = QSlider()
-        self.threshold_slider.setMinimum(0)
-        self.threshold_slider.setMaximum(100)
-        self.threshold_slider.setValue(self.led.threshold)
-        self.threshold_slider.valueChanged.connect(self.update_threshold)
-
-        self.save_button = QPushButton("Guardar")
-        self.save_button.clicked.connect(self.save_config)
-
-        layout.addWidget(self.threshold_label)
-        layout.addWidget(self.threshold_slider)
-        layout.addWidget(self.save_button)
-
+        
+        # Campo para el threshold
+        self.threshold_edit = QLineEdit(str(self.led.threshold))
+        layout.addWidget(QLabel("Threshold:"))
+        layout.addWidget(self.threshold_edit)
+        
+        # Menú desplegable para seleccionar el parámetro de reacción
+        layout.addWidget(QLabel("Parámetro de reacción:"))
+        self.response_combo = QComboBox()
+        self.response_combo.addItems(["RMS", "Picos"])
+        index = self.response_combo.findText(self.led.response, Qt.MatchFlag.MatchFixedString)
+        if index >= 0:
+            self.response_combo.setCurrentIndex(index)
+        layout.addWidget(self.response_combo)
+        
+        # Botones Guardar/Cancelar
+        btn_layout = QHBoxLayout()
+        save_btn = QPushButton("Guardar")
+        cancel_btn = QPushButton("Cancelar")
+        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+        
+        save_btn.clicked.connect(self.save_config)
+        cancel_btn.clicked.connect(self.reject)
+        
         self.setLayout(layout)
 
-    def update_threshold(self, value):
-        self.threshold_label.setText(f"Umbral: {value}")
-
     def save_config(self):
-        self.led.threshold = self.threshold_slider.value()
+        try:
+            self.led.threshold = float(self.threshold_edit.text())
+        except ValueError:
+            pass  # Se puede agregar manejo de error
+        self.led.response = self.response_combo.currentText()
         self.accept()

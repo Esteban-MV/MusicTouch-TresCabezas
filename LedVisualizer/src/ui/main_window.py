@@ -1,107 +1,378 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QPushButton, QListWidget, QHBoxLayout
-from src.ui.led_config_window import LedConfigWindow
-from src.core.track_manager import TrackManager
-from src.utils.profile_manager import ProfileManager
-from src.osc.osc_listener import OSCListener
+# src/ui/main_window.py
 
-class MainWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
+import sys
+import time
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QLabel, QPushButton, QFrame, QScrollArea, QInputDialog, QMessageBox
+)
+from PyQt6.QtGui import QPainter, QBrush, QColor
+from PyQt6.QtCore import Qt, QTimer
 
-        self.setWindowTitle("Control de LEDs - REAPER")
-        self.setGeometry(100, 100, 700, 500)
+from src.core.track_manager import Track, TrackManager
+from src.core.profile_manager import ProfileManager
+from src.ui.led_config_window import LEDConfigWindow
 
-        self.track_manager = TrackManager()
-        self.profile_manager = ProfileManager(self.track_manager)
-        self.osc_listener = OSCListener(self.track_manager)
-        self.osc_listener.start_listener()
+# Widget para dibujar un LED
+class LEDWidget(QWidget):
+    def __init__(self, led, parent=None):
+        super().__init__(parent)
+        self.led = led
+        self.setMinimumSize(30, 30)
+        self.setMaximumSize(30, 30)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
+    def mousePressEvent(self, event):
+        config_window = LEDConfigWindow(self.led, self)
+        config_window.exec()
 
-        layout = QVBoxLayout()
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = self.rect().adjusted(2, 2, -2, -2)
+        color = QColor(0, 255, 0)
+        color.setAlphaF(self.led.intensity)
+        painter.setBrush(QBrush(color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(rect)
+        painter.end()
 
-        self.track_list = QListWidget()
-        self.track_list.currentItemChanged.connect(self.update_led_list)
+# Contenedor para un LED y su botón de eliminación
+class LEDContainer(QWidget):
+    def __init__(self, led, remove_callback=None, parent=None):
+        super().__init__(parent)
+        self.led = led
+        self.remove_callback = remove_callback
+        self.initUI()
 
-        self.led_list = QListWidget()
+    def initUI(self):
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        self.led_widget = LEDWidget(self.led)
+        self.remove_btn = QPushButton("x")
+        self.remove_btn.setFixedSize(15, 15)
+        self.remove_btn.setStyleSheet("background-color: red; color: white; font-size: 10px;")
+        self.remove_btn.clicked.connect(self.handle_remove)
+        layout.addWidget(self.led_widget)
+        layout.addWidget(self.remove_btn)
+        self.setLayout(layout)
 
-        self.add_track_button = QPushButton("Agregar Pista")
-        self.add_track_button.clicked.connect(self.add_track)
+    def handle_remove(self):
+        if self.remove_callback:
+            self.remove_callback(self)
 
-        self.remove_track_button = QPushButton("Eliminar Pista")
-        self.remove_track_button.clicked.connect(self.remove_track)
+# Fila de pista en la UI (con LEDs y botón para eliminar la pista)
+class TrackRow(QWidget):
+    def __init__(self, track, remove_callback=None, parent=None):
+        super().__init__(parent)
+        self.track = track
+        self.remove_callback = remove_callback
+        self.led_containers = []
+        self.initUI()
 
-        self.add_led_button = QPushButton("Agregar LED")
-        self.add_led_button.clicked.connect(self.add_led)
-
-        self.config_led_button = QPushButton("Configurar LED")
-        self.config_led_button.clicked.connect(self.open_led_config)
-
-        self.save_profile_button = QPushButton("Guardar Perfil")
-        self.save_profile_button.clicked.connect(self.save_profile)
-
-        self.load_profile_button = QPushButton("Cargar Perfil")
-        self.load_profile_button.clicked.connect(self.load_profile)
-
-        track_layout = QHBoxLayout()
-        track_layout.addWidget(self.track_list)
-        track_layout.addWidget(self.add_track_button)
-        track_layout.addWidget(self.remove_track_button)
-
-        led_layout = QHBoxLayout()
-        led_layout.addWidget(self.led_list)
-        led_layout.addWidget(self.add_led_button)
-        led_layout.addWidget(self.config_led_button)
-
-        layout.addLayout(track_layout)
-        layout.addLayout(led_layout)
-        layout.addWidget(self.save_profile_button)
-        layout.addWidget(self.load_profile_button)
-
-        self.central_widget.setLayout(layout)
-
-    def add_track(self):
-        track_id = len(self.track_manager.tracks) + 1
-        self.track_manager.add_track(track_id, f"Pista {track_id}")
-        self.track_list.addItem(f"Pista {track_id}")
-
-    def remove_track(self):
-        selected_item = self.track_list.currentItem()
-        if selected_item:
-            track_id = int(selected_item.text().split()[-1])
-            self.track_manager.remove_track(track_id)
-            self.track_list.takeItem(self.track_list.row(selected_item))
+    def initUI(self):
+        self.layout = QHBoxLayout()
+        self.layout.setContentsMargins(5, 5, 5, 5)
+        self.layout.setSpacing(10)
+        
+        # Etiqueta con el nombre de la pista
+        self.track_label = QLabel(f"{self.track.name}")
+        self.track_label.setStyleSheet("color: white; font-weight: bold;")
+        self.layout.addWidget(self.track_label, 1)
+        
+        # Área de LEDs (layout horizontal)
+        self.led_area = QHBoxLayout()
+        for led in self.track.leds:
+            container = LEDContainer(led, remove_callback=self.remove_led)
+            self.led_containers.append(container)
+            self.led_area.addWidget(container)
+        
+        # Botón para agregar un LED
+        self.add_led_btn = QPushButton("+")
+        self.add_led_btn.setFixedSize(30, 30)
+        self.add_led_btn.setStyleSheet("background-color: #444; color: white; border: none;")
+        self.add_led_btn.clicked.connect(self.add_led)
+        self.led_area.addWidget(self.add_led_btn)
+        
+        self.layout.addLayout(self.led_area, 3)
+        
+        # Botón para eliminar la pista
+        self.remove_track_btn = QPushButton("Eliminar Pista")
+        self.remove_track_btn.setFixedSize(100, 30)
+        self.remove_track_btn.setStyleSheet("background-color: #bb0000; color: white;")
+        self.remove_track_btn.clicked.connect(self.handle_remove_track)
+        self.layout.addWidget(self.remove_track_btn)
+        
+        self.setLayout(self.layout)
 
     def add_led(self):
-        selected_item = self.track_list.currentItem()
-        if selected_item:
-            track_id = int(selected_item.text().split()[-1])
-            self.track_manager.tracks[track_id].add_led()
-            self.update_led_list()
+        from src.core.led import LED
+        new_led = LED(threshold=0.5, intensity=0.3)
+        self.track.leds.append(new_led)
+        container = LEDContainer(new_led, remove_callback=self.remove_led)
+        self.led_containers.append(container)
+        self.led_area.insertWidget(self.led_area.count()-1, container)
 
-    def update_led_list(self):
-        self.led_list.clear()
-        selected_item = self.track_list.currentItem()
-        if selected_item:
-            track_id = int(selected_item.text().split()[-1])
-            leds = self.track_manager.tracks[track_id].leds
-            for led in leds:
-                self.led_list.addItem(f"LED {led.led_id}")
+    def remove_led(self, container):
+        if container in self.led_containers:
+            index = self.led_containers.index(container)
+            self.led_containers.remove(container)
+            self.track.leds.pop(index)
+            container.setParent(None)
+            container.deleteLater()
 
-    def open_led_config(self):
-        selected_item = self.led_list.currentItem()
-        if selected_item:
-            led_id = int(selected_item.text().split()[-1])
-            track_id = int(self.track_list.currentItem().text().split()[-1])
+    def handle_remove_track(self):
+        if self.remove_callback:
+            self.remove_callback(self)
 
-            led = self.track_manager.tracks[track_id].get_led(led_id)
-            config_window = LedConfigWindow(led)
-            config_window.exec()
+    def refresh(self):
+        for container in self.led_containers:
+            container.led_widget.update()
+
+class MainWindow(QMainWindow):
+    def __init__(self, track_manager, osc_listener):
+        super().__init__()
+        self.setWindowTitle("LedVisualizer")
+        self.resize(800, 600)
+        self.track_manager = track_manager
+        self.osc_listener = osc_listener  # Referencia al objeto OSCListener para conocer su estado
+        self.profile_manager = ProfileManager()
+        
+        self.setStyleSheet("background-color: #1e1e1e;")
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        self.main_layout = QVBoxLayout(self.central_widget)
+        self.main_layout.setSpacing(10)
+        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Barra superior: agregar pista y gestión de perfiles, más botón de información de conexión
+        self.top_bar = QHBoxLayout()
+        self.add_track_btn = QPushButton("Agregar Pista")
+        self.add_track_btn.setStyleSheet("background-color: #444; color: white; padding: 5px 10px;")
+        self.add_track_btn.clicked.connect(self.add_track)
+        self.top_bar.addWidget(self.add_track_btn)
+        self.top_bar.addStretch()
+        self.select_profile_btn = QPushButton("Seleccionar Perfil")
+        self.save_profile_btn = QPushButton("Guardar Perfil")
+        self.delete_profile_btn = QPushButton("Eliminar Perfil")
+        self.connection_info_btn = QPushButton("Información Reaper")
+        button_style = """
+            QPushButton {
+                background-color: #444;
+                color: white;
+                padding: 5px 10px;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #555;
+            }
+        """
+        self.select_profile_btn.setStyleSheet(button_style)
+        self.save_profile_btn.setStyleSheet(button_style)
+        self.delete_profile_btn.setStyleSheet(button_style)
+        self.connection_info_btn.setStyleSheet(button_style)
+        self.select_profile_btn.clicked.connect(self.select_profile)
+        self.save_profile_btn.clicked.connect(self.save_profile)
+        self.delete_profile_btn.clicked.connect(self.delete_profile)
+        self.connection_info_btn.clicked.connect(self.show_connection_info)
+        self.top_bar.addWidget(self.select_profile_btn)
+        self.top_bar.addWidget(self.save_profile_btn)
+        self.top_bar.addWidget(self.delete_profile_btn)
+        self.top_bar.addWidget(self.connection_info_btn)
+        self.main_layout.addLayout(self.top_bar)
+        
+        # Indicadores de conexión a Reaper y recepción de datos
+        self.status_layout = QHBoxLayout()
+        self.reaper_connected_label = QLabel("Conectado a Reaper: No")
+        self.reaper_listening_label = QLabel("Escuchando Reaper: No")
+        self.reaper_connected_label.setStyleSheet("color: white;")
+        self.reaper_listening_label.setStyleSheet("color: white;")
+        self.status_layout.addWidget(self.reaper_connected_label)
+        self.status_layout.addWidget(self.reaper_listening_label)
+        self.main_layout.addLayout(self.status_layout)
+        
+        # Encabezado: "Pistas" y "LEDs"
+        self.header_frame = QFrame()
+        self.header_frame.setStyleSheet("background-color: #2e2e2e;")
+        self.header_layout = QHBoxLayout(self.header_frame)
+        self.header_layout.setContentsMargins(10, 5, 10, 5)
+        self.header_layout.setSpacing(10)
+        header_pistas = QLabel("Pistas")
+        header_pistas.setStyleSheet("color: white; font-weight: bold;")
+        header_leds = QLabel("LEDs")
+        header_leds.setStyleSheet("color: white; font-weight: bold;")
+        self.header_layout.addWidget(header_pistas, 1)
+        self.header_layout.addWidget(header_leds, 3)
+        self.main_layout.addWidget(self.header_frame)
+        
+        # Área central con scroll para las pistas
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.track_container = QWidget()
+        self.track_layout = QVBoxLayout(self.track_container)
+        self.track_layout.setSpacing(5)
+        self.track_layout.setContentsMargins(0, 0, 0, 0)
+        self.track_rows = []
+        for track in self.track_manager.tracks:
+            self.create_track_row(track)
+        self.scroll_area.setWidget(self.track_container)
+        self.main_layout.addWidget(self.scroll_area)
+        
+        # Leyenda inferior
+        self.legend_frame = QFrame()
+        self.legend_frame.setStyleSheet("background-color: #2e2e2e;")
+        self.legend_layout = QHBoxLayout(self.legend_frame)
+        self.legend_layout.setContentsMargins(10, 5, 10, 5)
+        self.legend_layout.setSpacing(20)
+        # Leyenda para LED
+        dummy_led = type('Dummy', (), {'intensity': 0.8})()
+        led_icon = LEDWidget(dummy_led)
+        led_label = QLabel("LED: Visualización de intensidad")
+        led_label.setStyleSheet("color: white;")
+        led_legend = QHBoxLayout()
+        led_legend.addWidget(led_icon)
+        led_legend.addWidget(led_label)
+        # Leyenda para Configuración
+        config_btn = QPushButton("⚙")
+        config_btn.setFixedSize(30, 30)
+        config_btn.setStyleSheet("background-color: #444; color: white; border: none;")
+        config_label = QLabel("Configurar LED")
+        config_label.setStyleSheet("color: white;")
+        config_legend = QHBoxLayout()
+        config_legend.addWidget(config_btn)
+        config_legend.addWidget(config_label)
+        # Leyenda para Agregar LED
+        add_led_btn = QPushButton("+")
+        add_led_btn.setFixedSize(30, 30)
+        add_led_btn.setStyleSheet("background-color: #444; color: white; border: none;")
+        add_label = QLabel("Agregar LED")
+        add_label.setStyleSheet("color: white;")
+        add_legend = QHBoxLayout()
+        add_legend.addWidget(add_led_btn)
+        add_legend.addWidget(add_label)
+        self.legend_layout.addLayout(led_legend)
+        self.legend_layout.addLayout(config_legend)
+        self.legend_layout.addLayout(add_legend)
+        self.main_layout.addWidget(self.legend_frame)
+        
+        # Temporizador para refrescar la UI (incluyendo los indicadores de estado)
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.refresh_ui)
+        self.timer.start(100)
+
+    def create_track_row(self, track):
+        row = TrackRow(track, remove_callback=self.remove_track_row)
+        self.track_rows.append(row)
+        self.track_layout.addWidget(row)
+
+    def add_track(self):
+        new_track_number = len(self.track_manager.tracks) + 1
+        from src.core.track_manager import Track
+        new_track = Track(new_track_number)
+        new_track.name = f"Pista {new_track_number}"
+        self.track_manager.add_track(new_track)
+        self.create_track_row(new_track)
+
+    def remove_track_row(self, row):
+        ret = QMessageBox.question(self, "Eliminar pista", f"¿Desea eliminar {row.track.name}?",
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if ret == QMessageBox.StandardButton.Yes:
+            if row in self.track_rows:
+                self.track_rows.remove(row)
+                self.track_layout.removeWidget(row)
+                row.setParent(None)
+                row.deleteLater()
+                self.track_manager.remove_track(row.track)
+                self.refresh_track_numbers()
+
+    def refresh_track_numbers(self):
+        for idx, row in enumerate(self.track_rows, start=1):
+            row.track.track_number = idx
+            row.track.name = f"Pista {idx}"
+            row.track_label.setText(row.track.name)
 
     def save_profile(self):
-        self.profile_manager.save_profile()
+        config = self.track_manager.export_configuration()
+        name, ok = QInputDialog.getText(self, "Guardar Perfil", "Ingrese el nombre del perfil:")
+        if ok and name:
+            self.profile_manager.save_profile(config, name)
+            QMessageBox.information(self, "Perfil guardado", f"Perfil '{name}' guardado exitosamente.")
 
-    def load_profile(self):
-        self.profile_manager.load_profile()
-        self.update_led_list()
+    def select_profile(self):
+        profiles = self.profile_manager.list_profiles()
+        if not profiles:
+            QMessageBox.warning(self, "Sin perfiles", "No hay perfiles guardados.")
+            return
+        profile, ok = QInputDialog.getItem(self, "Seleccionar Perfil", "Perfiles:", profiles, 0, False)
+        if ok and profile:
+            config = self.profile_manager.load_profile(profile)
+            self.track_manager.load_configuration(config)
+            for row in self.track_rows:
+                self.track_layout.removeWidget(row)
+                row.setParent(None)
+                row.deleteLater()
+            self.track_rows = []
+            for track in self.track_manager.tracks:
+                self.create_track_row(track)
+            self.refresh_track_numbers()
+            QMessageBox.information(self, "Perfil cargado", f"Perfil '{profile}' cargado exitosamente.")
+
+    def delete_profile(self):
+        profiles = self.profile_manager.list_profiles()
+        if not profiles:
+            QMessageBox.warning(self, "Sin perfiles", "No hay perfiles guardados para eliminar.")
+            return
+        profile, ok = QInputDialog.getItem(self, "Eliminar Perfil", "Seleccione el perfil a eliminar:", profiles, 0, False)
+        if ok and profile:
+            ret = QMessageBox.question(self, "Eliminar Perfil", f"¿Está seguro de eliminar el perfil '{profile}'?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if ret == QMessageBox.StandardButton.Yes:
+                self.profile_manager.delete_profile(profile)
+                QMessageBox.information(self, "Perfil eliminado", f"Perfil '{profile}' eliminado exitosamente.")
+
+    def show_connection_info(self):
+        info_text = (
+            "Para conectar LedVisualizer con Reaper, configure Reaper de la siguiente manera:\n\n"
+            "1. IP y Puerto:\n"
+            "   - IP: 127.0.0.1\n"
+            "   - Puerto: 9000\n\n"
+            "2. Direcciones OSC a enviar desde Reaper:\n"
+            "   - Para informar sobre una pista:\n"
+            "     /reaper/track/<track_id>/info \"Nombre de Pista\" <num_leds>\n\n"
+            "   - Para enviar el nivel de audio de la pista:\n"
+            "     /reaper/track/<track_id>/level <nivel>\n\n"
+            "   - (Opcional) Para indicar la eliminación de una pista:\n"
+            "     /reaper/track/<track_id>/remove\n\n"
+            "Asegúrese de activar el envío de mensajes OSC en Reaper y que no existan bloqueos de firewall para la conexión."
+        )
+        QMessageBox.information(self, "Información de Conexión a Reaper", info_text)
+
+    def refresh_ui(self):
+        # Actualiza la visualización de los LEDs en cada pista
+        for row in self.track_rows:
+            row.refresh()
+        # Actualiza los indicadores de conexión y recepción de datos OSC desde Reaper
+        if self.osc_listener.connected:
+            self.reaper_connected_label.setText("Conectado a Reaper: Sí")
+        else:
+            self.reaper_connected_label.setText("Conectado a Reaper: No")
+        if self.osc_listener.last_msg_time and (time.time() - self.osc_listener.last_msg_time) < 5:
+            self.reaper_listening_label.setText("Escuchando Reaper: Sí")
+        else:
+            self.reaper_listening_label.setText("Escuchando Reaper: No")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    from src.core.track_manager import TrackManager, Track
+    tm = TrackManager()
+    for i in range(1, 4):
+        new_track = Track(i)
+        new_track.name = f"Pista {i}"
+        tm.add_track(new_track)
+    from src.osc.osc_listener import OSCListener
+    osc_listener = OSCListener(tm)
+    osc_listener.start()
+    window = MainWindow(tm, osc_listener)
+    window.show()
+    sys.exit(app.exec())

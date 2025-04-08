@@ -1,4 +1,4 @@
- Configurar REAPER para enviar datos de pistas por OSC
+Configurar REAPER para enviar datos de pistas por OSC
 Configuración en REAPER:
 Abrir REAPER y acceder a:
 Opciones → Preferencias → Control/OSC/Web
