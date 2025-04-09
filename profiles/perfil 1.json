@@ -1,0 +1,77 @@
+{
+    "tracks": [
+        {
+            "track_number": 1,
+            "name": "Pista 1",
+            "leds": [
+                {
+                    "threshold": 0.5,
+                    "intensity": 0.3,
+                    "response": "Picos"
+                },
+                {
+                    "threshold": 0.5,
+                    "intensity": 0.3,
+                    "response": "RMS"
+                },
+                {
+                    "threshold": 0.5,
+                    "intensity": 0.3,
+                    "response": "RMS"
+                }
+            ]
+        },
+        {
+            "track_number": 2,
+            "name": "Pista 2",
+            "leds": [
+                {
+                    "threshold": 0.5,
+                    "intensity": 0.3,
+                    "response": "RMS"
+                },
+                {
+                    "threshold": 0.5,
+                    "intensity": 0.3,
+                    "response": "RMS"
+                },
+                {
+                    "threshold": 0.5,
+                    "intensity": 0.3,
+                    "response": "RMS"
+                },
+                {
+                    "threshold": 0.5,
+                    "intensity": 0.3,
+                    "response": "RMS"
+                }
+            ]
+        },
+        {
+            "track_number": 3,
+            "name": "Pista 3",
+            "leds": [
+                {
+                    "threshold": 0.5,
+                    "intensity": 0.3,
+                    "response": "RMS"
+                },
+                {
+                    "threshold": 0.5,
+                    "intensity": 0.3,
+                    "response": "RMS"
+                },
+                {
+                    "threshold": 0.5,
+                    "intensity": 0.3,
+                    "response": "RMS"
+                },
+                {
+                    "threshold": 0.5,
+                    "intensity": 0.3,
+                    "response": "RMS"
+                }
+            ]
+        }
+    ]
+}

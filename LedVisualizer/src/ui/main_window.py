@@ -118,13 +118,14 @@ class TrackRow(QWidget):
             container.led_widget.update()
 
 class MainWindow(QMainWindow):
-    def __init__(self, track_manager, osc_listener, midi_handler):
+    def __init__(self, track_manager, osc_listener, midi_handler, custom_listener):
         super().__init__()
         self.setWindowTitle("LedVisualizer")
         self.resize(800, 600)
         self.track_manager = track_manager
         self.osc_listener = osc_listener
         self.midi_handler = midi_handler
+        self.custom_listener = custom_listener
         self.profile_manager = ProfileManager()
         self.active_input = "OSC"  # Valor predeterminado
         self.setStyleSheet("background-color: #1e1e1e;")
@@ -162,9 +163,8 @@ class MainWindow(QMainWindow):
         self.save_profile_btn.clicked.connect(self.save_profile)
         self.delete_profile_btn.clicked.connect(self.delete_profile)
         self.connection_info_btn.clicked.connect(self.show_connection_info)
-        # Se agrega QComboBox para seleccionar el modo de entrada
         self.input_mode_combo = QComboBox()
-        self.input_mode_combo.addItems(["OSC", "MIDI"])
+        self.input_mode_combo.addItems(["OSC", "MIDI", "Custom"])
         self.input_mode_combo.currentTextChanged.connect(self.switch_input_mode)
         self.top_bar.addWidget(QLabel("Modo de entrada:"))
         self.top_bar.addWidget(self.input_mode_combo)
@@ -245,13 +245,24 @@ class MainWindow(QMainWindow):
         if mode == "OSC":
             if self.midi_handler.running:
                 self.midi_handler.stop()
+            if self.custom_listener.running:
+                self.custom_listener.stop()
             if not self.osc_listener.thread.is_alive():
                 self.osc_listener.start()
         elif mode == "MIDI":
-            if self.osc_listener:
+            if self.osc_listener and self.osc_listener.thread.is_alive():
                 self.osc_listener.stop()
+            if self.custom_listener.running:
+                self.custom_listener.stop()
             if not self.midi_handler.running:
                 self.midi_handler.start()
+        elif mode == "Custom":
+            if self.osc_listener and self.osc_listener.thread.is_alive():
+                self.osc_listener.stop()
+            if self.midi_handler.running:
+                self.midi_handler.stop()
+            if not self.custom_listener.running:
+                self.custom_listener.start()
 
     def create_track_row(self, track):
         row = TrackRow(track, remove_callback=self.remove_track_row)
@@ -325,21 +336,28 @@ class MainWindow(QMainWindow):
 
     def show_connection_info(self):
         info_text = (
-            "Para conectar LEDVisualizer con Reaper, configure Reaper de la siguiente manera:\n\n"
+            "=== Conexión mediante OSC ===\n"
             "1. IP y Puerto:\n"
             "   - IP: 127.0.0.1\n"
             "   - Puerto: 9000\n\n"
-            "2. Mensajes OSC (ejemplos):\n"
+            "2. Mensajes OSC a enviar desde Reaper:\n"
             "   - Información de pista:\n"
-            "     /reaper/track/<track_id>/info \"Nombre Pista\" <num_leds>\n\n"
+            "     /reaper/track/<track_id>/info \"Nombre Pista\" <num_leds>\n"
             "   - Nivel de audio:\n"
-            "     /reaper/track/<track_id>/level <nivel>\n\n"
+            "     /reaper/track/<track_id>/level <nivel>\n"
             "   - Eliminación de pista (opcional):\n"
             "     /reaper/track/<track_id>/remove\n\n"
-            "Para la entrada MIDI, LEDVisualizer leerá mensajes de Control Change donde:\n"
-            "   - El número de control se usará como ID de pista\n"
-            "   - El valor (0-127) se convertirá en un nivel (0.0 a 1.0)\n\n"
-            "Seleccione el modo de entrada (OSC o MIDI) en la interfaz para activar el receptor deseado."
+            "=== Conexión mediante MIDI ===\n"
+            "Reaper debe enviar mensajes MIDI (Control Change) al puerto MIDI predeterminado.\n"
+            "   - Se utiliza el número de control como ID de pista y el valor (0-127) se mapea a un nivel (0.0 a 1.0).\n\n"
+            "=== Conexión Custom (ReaScript) ===\n"
+            "Utilice el script ReaScript 'send_data.py' para enviar datos personalizados por UDP:\n"
+            "   - IP: 127.0.0.1\n"
+            "   - Puerto: 9100\n"
+            "   - Mensajes: \n"
+            "      TRACK_INFO|<track_id>|<Nombre Pista>|<num_leds>\n"
+            "      TRACK_LEVEL|<track_id>|<nivel>\n\n"
+            "Seleccione el modo de entrada en la interfaz para activar el receptor deseado."
         )
         QMessageBox.information(self, "Información de Conexión a Reaper", info_text)
 
@@ -356,13 +374,19 @@ class MainWindow(QMainWindow):
             else:
                 self.reaper_listening_label.setText("Escuchando Reaper: No")
         elif self.active_input == "MIDI":
-            # Para MIDI, podríamos definir indicadores basados en mensajes recibidos, aquí simplificamos:
             if self.midi_handler.running:
                 self.reaper_connected_label.setText("Conectado a Reaper (MIDI): Sí")
                 self.reaper_listening_label.setText("Escuchando Reaper (MIDI): Sí")
             else:
                 self.reaper_connected_label.setText("Conectado a Reaper (MIDI): No")
                 self.reaper_listening_label.setText("Escuchando Reaper (MIDI): No")
+        elif self.active_input == "Custom":
+            if self.custom_listener.running:
+                self.reaper_connected_label.setText("Conectado a Reaper (Custom): Sí")
+                self.reaper_listening_label.setText("Escuchando Reaper (Custom): Sí")
+            else:
+                self.reaper_connected_label.setText("Conectado a Reaper (Custom): No")
+                self.reaper_listening_label.setText("Escuchando Reaper (Custom): No")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
@@ -377,7 +401,8 @@ if __name__ == "__main__":
     osc_listener.start()
     from src.midi.midi_handler import MIDIHandler
     midi_handler = MIDIHandler(tm)
-    # Por defecto iniciamos en OSC; el usuario podrá cambiar a MIDI desde el combo
-    window = MainWindow(tm, osc_listener, midi_handler)
+    from src.custom.custom_socket_listener import CustomSocketListener
+    custom_listener = CustomSocketListener(tm)
+    window = MainWindow(tm, osc_listener, midi_handler, custom_listener)
     window.show()
     sys.exit(app.exec())
